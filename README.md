@@ -4,6 +4,26 @@ ZettelFlow is a powerful, CLI-driven pipeline for transforming raw, unstructured
 
 It uses a three-stage, LLM-powered workflow to distill your ideas into a clean, organized format.
 
+## Philosophy: How ZettelFlow Fits the Zettelkasten Method
+
+ZettelFlow is designed to be the "factory" that produces the raw materials for your Zettelkasten. It automates the most tedious parts of the process so you can focus on what matters: thinking and making connections.
+
+*   **`ingest` is your "Inbox"**: It's for capturing raw, fleeting thoughts and external content without judgment, just as you would with a physical or digital inbox. The goal is to get ideas out of your head and into the system quickly.
+
+*   **`split` is "Creating Atomic Notes"**: This is the core principle of Zettelkasten. The command forces you to break down large blocks of text into small, single-idea "Zettels." This atomicity is what makes the ideas easy to link and reuse later.
+
+*   **`enrich` is "Elaborating and Connecting"**: This stage automates the process of giving each note a descriptive title and tags. These are the hooks you need to begin connecting ideas and building knowledge. The LLM acts as your tireless assistant, summarizing the core idea so you can easily see how it might relate to other notes.
+
+## Next Steps: Your Knowledge Workshop
+
+The final output in the `enrich` directory is just the beginning. The generated `.md` files are designed to be used with popular PKM (Personal Knowledge Management) tools that are excellent for building a Zettelkasten, such as:
+
+*   **[Obsidian](https://obsidian.md/)**
+*   **[Logseq](https://logseq.com/)**
+*   Any other plain-text Markdown editor that supports wiki-style links.
+
+Think of `zettelflow` as the tool that prepares your lumber, and a tool like Obsidian as the workshop where you build your intellectual furniture.
+
 ## The ZettelFlow Pipeline
 
 The application is designed around a simple, three-stage data pipeline. Each stage has a dedicated input and output directory, allowing you to inspect the results at each step.
@@ -99,26 +119,6 @@ Inside this directory, you will find:
 *   `config.yaml`: The main configuration file. This is where you can change data paths, API settings, and tune the LLM parameters for each stage of the pipeline.
 *   `prompts/`: Contains the `default_ingest.md` and `default_enrich.md` prompts. You can edit these to change the LLM's behavior.
 *   `templates/`: Contains the `note_header.yml` template used by the `split` command.
-
-## Philosophy: How ZettelFlow Fits the Zettelkasten Method
-
-ZettelFlow is designed to be the "factory" that produces the raw materials for your Zettelkasten. It automates the most tedious parts of the process so you can focus on what matters: thinking and making connections.
-
-*   **`ingest` is your "Inbox"**: It's for capturing raw, fleeting thoughts and external content without judgment, just as you would with a physical or digital inbox. The goal is to get ideas out of your head and into the system quickly.
-
-*   **`split` is "Creating Atomic Notes"**: This is the core principle of Zettelkasten. The command forces you to break down large blocks of text into small, single-idea "Zettels." This atomicity is what makes the ideas easy to link and reuse later.
-
-*   **`enrich` is "Elaborating and Connecting"**: This stage automates the process of giving each note a descriptive title and tags. These are the hooks you need to begin connecting ideas and building knowledge. The LLM acts as your tireless assistant, summarizing the core idea so you can easily see how it might relate to other notes.
-
-## Next Steps: Your Knowledge Workshop
-
-The final output in the `enrich` directory is just the beginning. The generated `.md` files are designed to be used with popular PKM (Personal Knowledge Management) tools that are excellent for building a Zettelkasten, such as:
-
-*   **[Obsidian](https://obsidian.md/)**
-*   **[Logseq](https://logseq.com/)**
-*   Any other plain-text Markdown editor that supports wiki-style links.
-
-Think of `zettelflow` as the tool that prepares your lumber, and a tool like Obsidian as the workshop where you build your intellectual furniture.
 
 ### Per-Stage LLM Configuration
 
