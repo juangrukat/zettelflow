@@ -45,7 +45,8 @@ var ingestCmd = &cobra.Command{
 			inputText = builder.String()
 		} else {
 			// Interactive prompt
-			fmt.Println("Enter your text (press Ctrl+D when finished):")
+			fmt.Println("Enter text to ingest. Press Enter for a new line.")
+			fmt.Println("When you are finished, press Ctrl+D on a new, empty line.")
 			scanner := bufio.NewScanner(os.Stdin)
 			var builder strings.Builder
 			for scanner.Scan() {

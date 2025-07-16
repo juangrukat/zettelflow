@@ -20,16 +20,11 @@ var enrichCmd = &cobra.Command{
 	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		checkAPIKey()
-		var directory string
-		if len(args) > 0 {
-			directory = args[0]
-		} else {
-			directory = viper.GetString("paths.split")
-			if directory[0] == '~' {
-				home, err := os.UserHomeDir()
-				cobra.CheckErr(err)
-				directory = filepath.Join(home, directory[1:])
-			}
+		splitPath := viper.GetString("paths.split")
+		if splitPath[0] == '~' {
+			home, err := os.UserHomeDir()
+			cobra.CheckErr(err)
+			splitPath = filepath.Join(home, splitPath[1:])
 		}
 
 		enrichPath := viper.GetString("paths.enrich")
@@ -39,10 +34,15 @@ var enrichCmd = &cobra.Command{
 			enrichPath = filepath.Join(home, enrichPath[1:])
 		}
 
-		fmt.Printf("Enriching notes in directory: %s\n", directory)
+		fmt.Printf("Enriching notes in directory: %s\n", splitPath)
 
-		files, err := ioutil.ReadDir(directory)
+		files, err := ioutil.ReadDir(splitPath)
 		cobra.CheckErr(err)
+
+		if len(files) == 0 {
+			fmt.Println("No notes to enrich in the split directory.")
+			return
+		}
 
 		// Load the enrich prompt
 		promptPath := viper.GetString("paths.prompts")
@@ -59,13 +59,17 @@ var enrichCmd = &cobra.Command{
 		model, _ := cmd.Flags().GetString("model")
 
 		for _, file := range files {
+			if file.IsDir() {
+				continue // Skip directories, including our 'processed' directory
+			}
+
 			expectedExt := viper.GetString("split.output_extension")
-			if file.IsDir() || filepath.Ext(file.Name()) != expectedExt {
+			if filepath.Ext(file.Name()) != expectedExt {
 				continue
 			}
 
 			fmt.Printf("Processing note: %s\n", file.Name())
-			filePath := filepath.Join(directory, file.Name())
+			filePath := filepath.Join(splitPath, file.Name())
 			originalContent, err := ioutil.ReadFile(filePath)
 			cobra.CheckErr(err)
 
@@ -93,11 +97,9 @@ var enrichCmd = &cobra.Command{
 				}
 			}
 			if llmYAML == "" {
-				// Fallback for when the LLM doesn't return separators
 				llmYAML = llmResponse
 			}
 			llmYAML = strings.TrimSpace(llmYAML)
-
 
 			// 3. ISOLATE the original body content
 			bodyStr := ""
@@ -105,15 +107,13 @@ var enrichCmd = &cobra.Command{
 			if strings.HasPrefix(string(originalContent), "---") {
 				endOfFrontmatter := strings.Index(string(originalContent)[3:], separator)
 				if endOfFrontmatter != -1 {
-					endOfFrontmatter += 3 // The position is relative, so add back the length of the prefix we skipped
+					endOfFrontmatter += 3
 					bodyStr = string(originalContent)[endOfFrontmatter+len(separator):]
 				}
 			}
 			if bodyStr == "" {
-				// If we couldn't parse, fall back to using the whole original file as the body
 				bodyStr = string(originalContent)
 			}
-
 
 			// 4. Combine the new YAML from the LLM with the original body
 			finalContent := fmt.Sprintf("---\n%s\n---\n%s", llmYAML, bodyStr)
