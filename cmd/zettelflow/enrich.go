@@ -56,7 +56,11 @@ var enrichCmd = &cobra.Command{
 		cobra.CheckErr(err)
 
 		client := openai.NewClient(viper.GetString("llm.api_key"))
-		model, _ := cmd.Flags().GetString("model")
+		model := viper.GetString("enrich.model")
+		if model == "" {
+			fmt.Fprintln(os.Stderr, "Error: enrich model is not defined in the configuration.")
+			os.Exit(1)
+		}
 
 		for _, file := range files {
 			if file.IsDir() {
@@ -76,7 +80,9 @@ var enrichCmd = &cobra.Command{
 			// 1. Send the ENTIRE original content to the LLM
 			finalPrompt := strings.Replace(string(promptTemplate), "{content}", string(originalContent), -1)
 			req := openai.ChatCompletionRequest{
-				Model: model,
+				Model:               model,
+				Temperature:         float32(viper.GetFloat64("enrich.temperature")),
+				MaxCompletionTokens: viper.GetInt("enrich.max_completion_tokens"),
 				Messages: []openai.ChatCompletionMessage{
 					{
 						Role:    openai.ChatMessageRoleUser,
@@ -125,6 +131,7 @@ var enrichCmd = &cobra.Command{
 			cobra.CheckErr(err)
 			fmt.Printf("  - Saved enriched note to: %s\n", outputPath)
 		}
+		os.Exit(0)
 	},
 }
 
@@ -132,6 +139,5 @@ func init() {
 	rootCmd.AddCommand(enrichCmd)
 	enrichCmd.Flags().Int("parallel", 4, "Number of parallel workers")
 	enrichCmd.Flags().String("filter", "", "Filter notes to enrich (e.g., tag==todo)")
-	enrichCmd.Flags().StringP("model", "m", "gpt-4o-mini", "The model to use for enrichment")
 }
 

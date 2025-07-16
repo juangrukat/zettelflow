@@ -1,7 +1,6 @@
 configVersion: 1
 llm:
   api_key: ${OPENAI_API_KEY}
-  model: gpt-4o-mini
   timeout: 120s
 paths:
   ingest: ~/.local/share/zettelflow/ingest
@@ -10,11 +9,18 @@ paths:
   prompts: ~/.config/zettelflow/prompts
   templates: ~/.config/zettelflow/templates
   logs:  ~/.local/state/zettelflow/logs
+ingest:
+  model: gpt-4o
+  temperature: 0.5
+  max_completion_tokens: 2000
 split:
   delimiter: "###"
   clean: true
   output_extension: .md
 enrich:
+  model: gpt-4o-mini
+  temperature: 0.7
+  max_completion_tokens: 1500
   parallel: 4
 concurrency:
   max: 0       # 0 = runtime.NumCPU()

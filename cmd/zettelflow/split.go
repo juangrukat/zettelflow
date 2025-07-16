@@ -123,6 +123,7 @@ var splitCmd = &cobra.Command{
 				cobra.CheckErr(err)
 			}
 		}
+		os.Exit(0)
 	},
 }
 
