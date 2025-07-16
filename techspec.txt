@@ -1,0 +1,274 @@
+# 🛠 **ZettelFlow — Complete Technical Specification (v 1.0.0)**
+
+*A production-grade, cross-platform knowledge-pipeline written 100 % in Go.*
+
+---
+
+## 1  📦 Project Charter
+
+| Item                | Detail                                                                                                                                                                        |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Name**            | **ZettelFlow**                                                                                                                                                                |
+| **Mission**         | Transform raw prose into **structured, Zettelkasten-ready notes** in three deterministic stages that can be chained from the command line *or* driven by a native desktop UI. |
+| **Primary Targets** | • Individual knowledge-workers<br>• Researchers & writers<br>• PKM enthusiasts migrating from unstructured notes                                                              |
+| **Non-Goals**       | • Real-time team collaboration<br>• Cloud sync / multi-tenant SaaS<br>• Browser-based UI                                                                                      |
+
+---
+
+## 2  🔖 High-Level Features
+
+| # | Feature                                      | Delivered by                               |
+| - | -------------------------------------------- | ------------------------------------------ |
+| 1 | **CLI pipeline** (`ingest → split → enrich`) | Cobra sub-commands                         |
+| 2 | **Desktop GUI** (tabbed)                     | Fyne v2 (Gio optional build tag)           |
+| 3 | **Template-driven YAML output**              | `go:embed` default + user overrides        |
+| 4 | **OpenAI-compatible LLM calls**              | Async, streaming, retry with back-off      |
+| 5 | **Atomic file store & versioning**           | Local FS under `$XDG_DATA_HOME/zettelflow` |
+| 6 | **Structured logging**                       | `zap` with rotating sink                   |
+| 7 | **Config stacking**                          | `flag > env > config.yaml` (via Viper)     |
+| 8 | **Extensible plug-ins** (future)             | `pkg/plugins` + `ZFLOW_PLUGIN_PATH`        |
+
+---
+
+## 3  🏗 Project Layout (Go Modules)
+
+```
+zettelflow/
+├── cmd/
+│   └── zettelflow/          # Cobra root + cmds
+│       ├── main.go          # single entry point
+│       ├── ingest.go
+│       ├── split.go
+│       └── enrich.go
+├── internal/
+│   ├── pipeline/            # Orchestration of stages
+│   ├── llm/                 # HTTP client, streaming, retry
+│   ├── splitter/            # Pure functions: text → []string
+│   ├── yamlgen/             # Template engine (yaml.v3)
+│   ├── store/               # Atomic writes, backup rotation
+│   ├── progress/            # TTY/GUI progress renderers
+│   ├── ui/
+│   │   ├── fyne/            # Fyne widgets & windows
+│   │   └── gio/             # Optional Gio mirror
+│   └── logging/             # Zap façade
+├── pkg/                     # Exported SDK (future plug-ins)
+│   └── zflow/
+├── assets/
+│   ├── prompts/
+│   │   ├── default_ingest.md
+│   │   └── default_enrich.md
+│   └── yaml_templates/
+│       └── note_header.yml
+├── tests/
+│   ├── e2e/
+│   └── unit/
+├── docs/                    # Man page, design docs
+└── Makefile / magefiles/
+```
+
+---
+
+## 4  ⚙️ Execution Flow
+
+### 4.1  Stage 1 – `ingest`
+
+1. Read input (file or stdin).
+2. Inject into Markdown prompt (`{input_text}`).
+3. Dispatch streaming OpenAI request in separate goroutine; propagate `context.Context`.
+4. Pipe streamed tokens to **progress spinner** (CLI) *or* text area (GUI).
+5. Persist raw response to `ingest/` folder and emit structured log with cost metrics.
+
+### 4.2  Stage 2 – `split`
+
+1. Load concepts file.
+2. Optionally clean whitespace / Markdown cruft.
+3. `strings.Split(text, delimiter)` → `[]chunk`.
+4. Generate YAML header (`yamlgen.Render(tpl, data)`).
+5. Write atomic files `split/note_<ts>_<n>.yaml`.
+
+### 4.3  Stage 3 – `enrich`
+
+1. Walk YAML files (filterable).
+2. Spawn worker pool (`semaphore.NewWeighted`).
+3. For each file:
+
+   * Extract `content:` → inject into enrich prompt.
+   * Call LLM with retry/back-off (max `N`).
+   * Merge response fields under `enriched_*`; marshal back to YAML.
+4. Write to `enrich/` directory, preserving original filename suffix `_enriched.yaml`.
+5. Aggregate summary (success ∕ failure ∕ retries) to stdout / GUI modal.
+
+---
+
+## 5  🖥  User Interfaces
+
+### 5.1  Command-Line (Cobra)
+
+```
+zettelflow --help
+zettelflow ingest  source.txt      --prompt custom.md --model gpt-4o-mini
+zettelflow split   concepts.txt    --delimiter "###"  --preview
+zettelflow enrich  split/notes/    --parallel 4       --filter tag==todo
+zettelflow list    --stage enrich  --json
+zettelflow clean   --dry-run
+```
+
+* *Short flags* only for high-frequency options (`-o`, `-d`, `-p`).
+* Output modes: colourised human text (default), `--plain`, `--json`.
+* Exit codes: **0** ok · **1** usage · **2** external transient · **3** internal.
+
+### 5.2  Desktop (Fyne v2)
+
+```
+MainWindow
+└─ Tabs (Text, Split, Enrich)
+   ├─ Text Tab
+   │  ├─ TextArea (multiline)
+   │  ├─ PromptLoader (file dialog)
+   │  ├─ TokenCounter (binding)
+   │  ├─ ModelPane  (select + sliders)
+   │  └─ RunButton + ProgressBar
+   ├─ Split Tab
+   │  ├─ FilePicker
+   │  ├─ DelimiterEntry
+   │  ├─ CleanCheck
+   │  ├─ PreviewTable
+   │  └─ GenerateButton
+   └─ Enrich Tab
+      ├─ SourceDirPicker
+      ├─ PromptLoader
+      ├─ ParallelSpin
+      ├─ ProgressBar
+      └─ StartButton
+```
+
+* **One** `app.New().NewWindow()` per process.
+* All long-running work pushed onto goroutines; UI updates via `fyne.CurrentApp().SendNotification` or bound values.
+* Secondary dialogs (settings, about) are spawned in helper funcs—never after root window creation.
+
+---
+
+## 6  🔐 Security & Privacy
+
+| Concern     | Control                                                                      |
+| ----------- | ---------------------------------------------------------------------------- |
+| API keys    | Read from env or encrypted secrets file (`chmod 600`). Never logged.         |
+| TLS         | Go std-lib (`http.Transport`) with system roots; override CA via `--cacert`. |
+| Rate limits | Soft-fail on HTTP 429; retries with jitter.                                  |
+| File writes | `store.WriteTemp → os.Rename` for atomicity; backup suffix `.bak`.           |
+| SBOM        | Generated on release via `goreleaser --sbom`.                                |
+| CVE scan    | Grype workflow step blocks release on criticals.                             |
+
+---
+
+## 7  🛠  Build, Test & CI
+
+### 7.1  Toolchain
+
+* **Go 1.23+** (modules, `go:embed`, workspaces).
+* `go vet`, `staticcheck`, `golangci-lint run`.
+* `mage` for composite tasks (lint, test, build, package).
+* `goreleaser` for cross-compiled artefacts + Homebrew/Scoop.
+
+### 7.2  Testing Matrix
+
+| Tier     | Scope                                  | Runtime                                 |
+| -------- | -------------------------------------- | --------------------------------------- |
+| Unit     | Pure functions (`splitter`, `yamlgen`) | `go test ./...` (≈ 2 s)                 |
+| Contract | Mocked LLM (`httptest`)                | `go test ./internal/llm -tags=stub`     |
+| Golden   | In/out fixtures under `testdata/`      | `mage verify-golden`                    |
+| E2E      | Full pipeline on sample corpus         | GitHub Actions — Ubuntu, macOS, Windows |
+| Race     | `go test -race ./...`                  | Linux only                              |
+
+### 7.3  Coverage Target
+
+* **90 %** function coverage; HTML report posted as artefact.
+* PR gate fails under 85 %.
+
+---
+
+## 8  📈 Observability
+
+* **Logging** — `zap` production encoder, time = epoch µs, level = short (“inf”, “err”).
+  Rotating sink: 10 MB per file × 5 files.
+* **Metrics** — Internal `expvar` endpoint on `localhost:6060` (opt-in `--pprof`).
+* **Tracing** — Optional OTLP span export around LLM calls (env `ZFLOW_OTEL_ENDPOINT`).
+
+---
+
+## 9  Performance Budgets
+
+| Operation                       | Target                                       |
+| ------------------------------- | -------------------------------------------- |
+| Ingest latency (LLM 1 k tokens) | < 2 × remote model average                   |
+| Split 10 k words → YAML         | < 150 ms on M1 Air                           |
+| Enrich worker throughput        | ≥ 5 files / min (gpt-4o, network permitting) |
+| Idle GUI RAM                    | < 120 MB on macOS                            |
+
+---
+
+## 10  📜 Configuration Reference (`config.yaml`)
+
+```yaml
+configVersion: 1
+llm:
+  api_key: ${OPENAI_API_KEY}
+  model: gpt-4o-mini
+  timeout: 120s
+paths:
+  data:  ~/.local/share/zettelflow
+  logs:  ~/.local/state/zettelflow/logs
+split:
+  delimiter: "###"
+  clean: true
+enrich:
+  parallel: 4
+concurrency:
+  max: 0       # 0 = runtime.NumCPU()
+logging:
+  level: info  # debug|info|warn|error
+```
+
+---
+
+## 11  Release & Distribution
+
+| Channel         | Artefact                                                  |
+| --------------- | --------------------------------------------------------- |
+| GitHub Releases | tar/zip + SHA256 + SBOM                                   |
+| Homebrew        | `brew install zettelflow/tap/zettelflow`                  |
+| Scoop           | `scoop bucket add zflow …`                                |
+| winget          | `winget install zettelflow`                               |
+| Docker          | `ghcr.io/yourorg/zettelflow:<tag>` (static scratch image) |
+
+Every tag **v*X.Y.Z*** produces deterministic builds (ldflags: commit, date, version).
+
+---
+
+## 12  Roadmap (Post v1)
+
+| Milestone | Description                                                 |
+| --------- | ----------------------------------------------------------- |
+| **v1.1**  | Plug-in SDK (`pkg/plugins`) + sample synonym enricher       |
+| **v1.2**  | Remote data back-ends (S3 / GCS) with `rclone`-style config |
+| **v1.3**  | Web dashboard (Wails or Gio-Web) re-using JSON output       |
+| **v2.0**  | Real-time collaborative mode (optional server component)    |
+
+---
+
+## 13  Appendices
+
+### 13.1  Code-Style Guarantees
+
+* `go fmt`, `goimports` clean.
+* No anonymous funcs > 10 lines; every callback named.
+* No global `var log = ...`; use injected logger.
+* Build tags: `//go:build gui` for Fyne/Gio; headless builds remain < 15 MB.
+
+### 13.2  Assumptions
+
+* Users possess an OpenAI-compatible endpoint and network connectivity.
+* File system is local POSIX or NTFS with standard timestamp granularity.
+* GUI users are on macOS 12+, Windows 10+, or modern X11/Wayland Linux.
+
+---

@@ -1,0 +1,10 @@
+---
+title: {{ .Title }}
+date: {{ .Date }}
+{{- if .Tags }}
+tags: [{{ .Tags | join ", " }}]
+{{- else }}
+tags:
+{{- end }}
+---
+{{ .Content }}
