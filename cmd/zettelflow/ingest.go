@@ -12,17 +12,29 @@ import (
 	"time"
 
 	openai "github.com/sashabaranov/go-openai"
+	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 var ingestCmd = &cobra.Command{
-	Use:   "ingest [file]",
-	Short: "Ingest a file and process it with an LLM.",
-	Long:  `Reads input from a file or stdin, injects it into a prompt, and calls an OpenAI-compatible API.`,
+	Use:   "ingest [path]",
+	Short: "Ingest a file or directory and process it with an LLM.",
+	Long:  `Reads input from a file, a directory, or stdin, injects it into a prompt, and calls an OpenAI-compatible API.`,
 	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		checkAPIKey()
+		pterm.DefaultBox.WithTitle("Ingest Stage").Println("Starting ingestion process...")
+
+		// Print settings
+		pterm.DefaultSection.Println("Using Ingest Settings")
+		leveledList := pterm.LeveledList{
+			{Level: 0, Text: fmt.Sprintf("Model: %s", viper.GetString("ingest.model"))},
+			{Level: 0, Text: fmt.Sprintf("Temperature: %f", viper.GetFloat64("ingest.temperature"))},
+			{Level: 0, Text: fmt.Sprintf("Max Tokens: %d", viper.GetInt("ingest.max_completion_tokens"))},
+		}
+		pterm.DefaultTree.WithRoot(pterm.NewTreeFromLeveledList(leveledList)).Render()
+		pterm.Println() // for spacing
 
 		// Case 1: Path argument is provided (file or directory)
 		if len(args) > 0 {
@@ -32,13 +44,13 @@ var ingestCmd = &cobra.Command{
 
 			if info.IsDir() {
 				// Process a directory
-				fmt.Printf("Ingesting all files in directory: %s\n", path)
+				pterm.Info.Printf("Ingesting all files in directory: %s\n", path)
 				files, err := ioutil.ReadDir(path)
 				cobra.CheckErr(err)
 				for _, file := range files {
 					if !file.IsDir() {
 						filePath := filepath.Join(path, file.Name())
-						fmt.Printf("  - Processing file: %s\n", filePath)
+						pterm.Debug.Printf("  - Processing file: %s\n", filePath)
 						content, err := ioutil.ReadFile(filePath)
 						cobra.CheckErr(err)
 						processAndSave(string(content), cmd)
@@ -46,7 +58,7 @@ var ingestCmd = &cobra.Command{
 				}
 			} else {
 				// Process a single file
-				fmt.Printf("Ingesting file: %s\n", path)
+				pterm.Info.Printf("Ingesting file: %s\n", path)
 				content, err := ioutil.ReadFile(path)
 				cobra.CheckErr(err)
 				processAndSave(string(content), cmd)
@@ -57,7 +69,7 @@ var ingestCmd = &cobra.Command{
 			var inputText string
 			if (stat.Mode() & os.ModeCharDevice) == 0 {
 				// Piped input
-				fmt.Println("Ingesting from stdin...")
+				pterm.Info.Println("Ingesting from stdin...")
 				scanner := bufio.NewScanner(os.Stdin)
 				var builder strings.Builder
 				for scanner.Scan() {
@@ -67,8 +79,8 @@ var ingestCmd = &cobra.Command{
 				inputText = builder.String()
 			} else {
 				// Interactive prompt
-				fmt.Println("Enter text to ingest. Press Enter for a new line.")
-				fmt.Println("When you are finished, press Ctrl+D on a new, empty line.")
+				pterm.Info.Println("Enter text to ingest. Press Enter for a new line.")
+				pterm.Info.Println("When you are finished, press Ctrl+D on a new, empty line.")
 				scanner := bufio.NewScanner(os.Stdin)
 				var builder strings.Builder
 				for scanner.Scan() {
@@ -77,12 +89,13 @@ var ingestCmd = &cobra.Command{
 				}
 				inputText = builder.String()
 				if len(strings.TrimSpace(inputText)) == 0 {
-					fmt.Println("No input provided. Exiting.")
+					pterm.Warning.Println("No input provided. Exiting.")
 					os.Exit(0)
 				}
 			}
 			processAndSave(inputText, cmd)
 		}
+		pterm.Success.Println("Ingest stage complete.")
 		os.Exit(0)
 	},
 }
@@ -91,7 +104,7 @@ var ingestCmd = &cobra.Command{
 func processAndSave(inputText string, cmd *cobra.Command) {
 	model := viper.GetString("ingest.model")
 	if model == "" {
-		fmt.Fprintln(os.Stderr, "Error: ingest model is not defined in the configuration.")
+		pterm.Error.Println("Error: ingest model is not defined in the configuration.")
 		os.Exit(1)
 	}
 
@@ -126,11 +139,14 @@ func processAndSave(inputText string, cmd *cobra.Command) {
 		},
 		Stream: true,
 	}
+
+	pterm.Info.Println("Sending request to LLM...")
 	stream, err := client.CreateChatCompletionStream(context.Background(), req)
 	cobra.CheckErr(err)
 	defer stream.Close()
 
-	fmt.Println("--- LLM Response ---")
+	pterm.Println() // Add a newline for better formatting
+	pterm.DefaultSection.Println("LLM Response")
 	var responseBuilder strings.Builder
 	for {
 		response, err := stream.Recv()
@@ -138,16 +154,18 @@ func processAndSave(inputText string, cmd *cobra.Command) {
 			break
 		}
 		if err != nil {
-			fmt.Printf("\nStream error: %v\n", err)
+			pterm.Error.Printf("\nStream error: %v\n", err)
 			os.Exit(1)
 		}
 		if len(response.Choices) > 0 {
 			chunk := response.Choices[0].Delta.Content
-			fmt.Printf(chunk)
+			fmt.Print(pterm.LightCyan(chunk))
 			responseBuilder.WriteString(chunk)
 		}
 	}
-	fmt.Println("\n--------------------")
+	pterm.Println() // Add a newline for better formatting
+	pterm.DefaultSection.Println("End of Response")
+
 
 	// Save the response
 	ingestPath := viper.GetString("paths.ingest")
@@ -162,12 +180,7 @@ func processAndSave(inputText string, cmd *cobra.Command) {
 	outputFile := filepath.Join(ingestPath, fmt.Sprintf("ingest_%s.txt", ts))
 	err = ioutil.WriteFile(outputFile, []byte(responseBuilder.String()), 0644)
 	cobra.CheckErr(err)
-	fmt.Println("Saved ingested text to:", outputFile)
-}
-
-func init() {
-	rootCmd.AddCommand(ingestCmd)
-	ingestCmd.Flags().StringP("prompt", "p", "", "Path to a custom prompt file")
+	pterm.Success.Printf("Saved ingested text to: %s\n", outputFile)
 }
 
 func init() {

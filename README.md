@@ -72,15 +72,20 @@ This saves the final, completed notes to your `enrich` data directory.
 
 ## Commands
 
-*   `./bin/zettelflow ingest [path]`: Processes text from a file, a directory, or stdin and saves the results to the `ingest` directory.
-*   `./bin/zettelflow split`: Splits all pending files from the `ingest` directory into note stubs in the `split` directory.
-*   `./bin/zettelflow enrich`: Enriches all notes from the `split` directory and saves them to the `enrich` directory.
+*   `./bin/zettelflow ingest [path]`: Processes text from a file, a directory, or stdin.
+    *   `--prompt, -p`: Use a custom prompt file instead of the default.
+*   `./bin/zettelflow split`: Splits all pending files from the `ingest` directory into note stubs.
+    *   `--delimiter, -d`: Use a custom delimiter to split the text.
+    *   `--preview`: See the split results without writing any files.
+*   `./bin/zettelflow enrich`: Enriches all notes from the `split` directory.
+    *   `--parallel`: Set the number of parallel workers for processing.
+    *   `--filter`: Filter which notes to enrich (e.g., based on tags).
 
 ### Utility Commands
 
 *   `./bin/zettelflow list <stage>`: Lists the files in a specific stage's data directory. The `<stage>` can be `ingest`, `split`, `enrich`, or `all`.
-*   `./bin/zettelflow clean <stage>`: Deletes all files from a specific stage's data directory. The `<stage>` can be `ingest`, `split`, `enrich`, or `all`. Use the `-d` or `--dry-run` flag to see what would be deleted without actually deleting anything.
-*   `./bin/zettelflow config path`: Prints the absolute path to your configuration directory, making it easy to find and edit your settings.
+*   `./bin/zettelflow clean <stage>`: Deletes all files from a specific stage's data directory. The `<stage>` can be `ingest`, `split`, `enrich`, or `all`. Use the `-d` or `--dry-run` flag to see what would be deleted.
+*   `./bin/zettelflow config path`: Prints the absolute path to your configuration directory.
 
 ## Configuration
 
@@ -94,6 +99,26 @@ Inside this directory, you will find:
 *   `config.yaml`: The main configuration file. This is where you can change data paths, API settings, and tune the LLM parameters for each stage of the pipeline.
 *   `prompts/`: Contains the `default_ingest.md` and `default_enrich.md` prompts. You can edit these to change the LLM's behavior.
 *   `templates/`: Contains the `note_header.yml` template used by the `split` command.
+
+## Philosophy: How ZettelFlow Fits the Zettelkasten Method
+
+ZettelFlow is designed to be the "factory" that produces the raw materials for your Zettelkasten. It automates the most tedious parts of the process so you can focus on what matters: thinking and making connections.
+
+*   **`ingest` is your "Inbox"**: It's for capturing raw, fleeting thoughts and external content without judgment, just as you would with a physical or digital inbox. The goal is to get ideas out of your head and into the system quickly.
+
+*   **`split` is "Creating Atomic Notes"**: This is the core principle of Zettelkasten. The command forces you to break down large blocks of text into small, single-idea "Zettels." This atomicity is what makes the ideas easy to link and reuse later.
+
+*   **`enrich` is "Elaborating and Connecting"**: This stage automates the process of giving each note a descriptive title and tags. These are the hooks you need to begin connecting ideas and building knowledge. The LLM acts as your tireless assistant, summarizing the core idea so you can easily see how it might relate to other notes.
+
+## Next Steps: Your Knowledge Workshop
+
+The final output in the `enrich` directory is just the beginning. The generated `.md` files are designed to be used with popular PKM (Personal Knowledge Management) tools that are excellent for building a Zettelkasten, such as:
+
+*   **[Obsidian](https://obsidian.md/)**
+*   **[Logseq](https://logseq.com/)**
+*   Any other plain-text Markdown editor that supports wiki-style links.
+
+Think of `zettelflow` as the tool that prepares your lumber, and a tool like Obsidian as the workshop where you build your intellectual furniture.
 
 ### Per-Stage LLM Configuration
 

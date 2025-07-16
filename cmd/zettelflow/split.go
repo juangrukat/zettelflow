@@ -10,16 +10,18 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 var splitCmd = &cobra.Command{
-	Use:   "split [file]",
-	Short: "Split a file into multiple notes.",
-	Long:  `Loads a file, splits it into chunks based on a delimiter, and generates YAML-fronted notes.`,
-	Args:  cobra.MaximumNArgs(1),
+	Use:   "split",
+	Short: "Split files from the ingest stage into multiple notes.",
+	Long:  `Processes all files in the ingest directory, splits them into chunks, and generates YAML-fronted notes.`,
+	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
+		pterm.DefaultBox.WithTitle("Split Stage").Println("Starting split process...")
 		ingestPath := viper.GetString("paths.ingest")
 		if ingestPath[0] == '~' {
 			home, err := os.UserHomeDir()
@@ -32,27 +34,30 @@ var splitCmd = &cobra.Command{
 		files, err := ioutil.ReadDir(ingestPath)
 		cobra.CheckErr(err)
 
-		if len(files) == 0 {
-			fmt.Println("No files to split in the ingest directory.")
-			return
+		filesToProcess := []os.FileInfo{}
+		for _, file := range files {
+			if !file.IsDir() {
+				filesToProcess = append(filesToProcess, file)
+			}
 		}
 
-		for _, file := range files {
-			if file.IsDir() {
-				continue // Skip directories, including our 'processed' directory
-			}
+		if len(filesToProcess) == 0 {
+			pterm.Info.Println("No files to split in the ingest directory.")
+			os.Exit(0)
+		}
 
+		for _, file := range filesToProcess {
 			inputFile := filepath.Join(ingestPath, file.Name())
 			delimiter, _ := cmd.Flags().GetString("delimiter")
 			preview, _ := cmd.Flags().GetBool("preview")
 
-			fmt.Printf("Splitting file: %s by delimiter: '%s'\n", inputFile, delimiter)
+			pterm.Info.Printf("Splitting file: %s by delimiter: '%s'\n", file.Name(), delimiter)
 
 			content, err := ioutil.ReadFile(inputFile)
 			cobra.CheckErr(err)
 
 			chunks := strings.Split(string(content), delimiter)
-			fmt.Printf("Found %d chunks.\n", len(chunks))
+			pterm.Debug.Printf("Found %d chunks.\n", len(chunks))
 
 			// Load and parse the YAML template
 			templatePath := viper.GetString("paths.templates")
@@ -104,25 +109,26 @@ var splitCmd = &cobra.Command{
 				cobra.CheckErr(err)
 
 				if preview {
-					fmt.Printf("--- Chunk %d ---\n", i+1)
-					fmt.Println(buf.String())
-				} else {
+                    pterm.NewStyle(pterm.FgLightCyan, pterm.Bold).Printf("--- Chunk %d Preview ---\n", i+1)
+                    pterm.Println(buf.String())
+                } else {
 					ts := time.Now().Format("20060102150405")
 					outputFile := filepath.Join(splitPath, fmt.Sprintf("note_%s_%d%s", ts, i+1, viper.GetString("split.output_extension")))
 					err = ioutil.WriteFile(outputFile, buf.Bytes(), 0644)
 					cobra.CheckErr(err)
-					fmt.Println("  - Created note:", outputFile)
+					pterm.Success.Printf("  - Created note: %s\n", outputFile)
 				}
 			}
 
 			// Move the processed file
 			if !preview {
 				destPath := filepath.Join(processedPath, file.Name())
-				fmt.Printf("  - Moving processed file to: %s\n", destPath)
+				pterm.Debug.Printf("  - Moving processed file to: %s\n", destPath)
 				err = os.Rename(inputFile, destPath)
 				cobra.CheckErr(err)
 			}
 		}
+		pterm.Success.Println("Split stage complete.")
 		os.Exit(0)
 	},
 }

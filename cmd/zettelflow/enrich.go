@@ -9,17 +9,30 @@ import (
 	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
+	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 var enrichCmd = &cobra.Command{
 	Use:   "enrich [directory]",
-	Short: "Enrich notes with LLM-generated content.",
-	Long:  `Walks a directory of YAML files, calls an LLM for each, and merges the results.`,
+	Short: "Enrich notes from the split stage with LLM-generated content.",
+	Long:  `Processes all notes in the split directory, calls an LLM for each, and saves the results.`,
 	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		checkAPIKey()
+		pterm.DefaultBox.WithTitle("Enrich Stage").Println("Starting enrichment process...")
+
+		// Print settings
+		pterm.DefaultSection.Println("Using Enrich Settings")
+		leveledList := pterm.LeveledList{
+			{Level: 0, Text: fmt.Sprintf("Model: %s", viper.GetString("enrich.model"))},
+			{Level: 0, Text: fmt.Sprintf("Temperature: %f", viper.GetFloat64("enrich.temperature"))},
+			{Level: 0, Text: fmt.Sprintf("Max Tokens: %d", viper.GetInt("enrich.max_completion_tokens"))},
+			{Level: 0, Text: fmt.Sprintf("Parallel Workers: %d", viper.GetInt("enrich.parallel"))},
+		}
+		pterm.DefaultTree.WithRoot(pterm.NewTreeFromLeveledList(leveledList)).Render()
+		pterm.Println() // for spacing
 		splitPath := viper.GetString("paths.split")
 		if splitPath[0] == '~' {
 			home, err := os.UserHomeDir()
@@ -34,14 +47,19 @@ var enrichCmd = &cobra.Command{
 			enrichPath = filepath.Join(home, enrichPath[1:])
 		}
 
-		fmt.Printf("Enriching notes in directory: %s\n", splitPath)
-
 		files, err := ioutil.ReadDir(splitPath)
 		cobra.CheckErr(err)
 
-		if len(files) == 0 {
-			fmt.Println("No notes to enrich in the split directory.")
-			return
+		filesToProcess := []os.FileInfo{}
+		for _, file := range files {
+			if !file.IsDir() {
+				filesToProcess = append(filesToProcess, file)
+			}
+		}
+
+		if len(filesToProcess) == 0 {
+			pterm.Info.Println("No notes to enrich in the split directory.")
+			os.Exit(0)
 		}
 
 		// Load the enrich prompt
@@ -58,21 +76,17 @@ var enrichCmd = &cobra.Command{
 		client := openai.NewClient(viper.GetString("llm.api_key"))
 		model := viper.GetString("enrich.model")
 		if model == "" {
-			fmt.Fprintln(os.Stderr, "Error: enrich model is not defined in the configuration.")
+			pterm.Error.Println("Error: enrich model is not defined in the configuration.")
 			os.Exit(1)
 		}
 
-		for _, file := range files {
-			if file.IsDir() {
-				continue // Skip directories, including our 'processed' directory
-			}
-
+		for _, file := range filesToProcess {
 			expectedExt := viper.GetString("split.output_extension")
 			if filepath.Ext(file.Name()) != expectedExt {
 				continue
 			}
 
-			fmt.Printf("Processing note: %s\n", file.Name())
+			pterm.Info.Printf("Processing note: %s\n", file.Name())
 			filePath := filepath.Join(splitPath, file.Name())
 			originalContent, err := ioutil.ReadFile(filePath)
 			cobra.CheckErr(err)
@@ -129,8 +143,9 @@ var enrichCmd = &cobra.Command{
 			outputPath := filepath.Join(enrichPath, fileName)
 			err = ioutil.WriteFile(outputPath, []byte(finalContent), 0644)
 			cobra.CheckErr(err)
-			fmt.Printf("  - Saved enriched note to: %s\n", outputPath)
+			pterm.Success.Printf("  - Saved enriched note to: %s\n", outputPath)
 		}
+		pterm.Success.Println("Enrich stage complete.")
 		os.Exit(0)
 	},
 }
